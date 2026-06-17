@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "init": "tsx src/init.ts",
+    "ingest": "tsx src/ingest.ts",
     "studio": "prisma studio"
   },
   "repository": {
