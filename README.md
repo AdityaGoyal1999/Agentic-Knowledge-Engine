@@ -40,5 +40,5 @@ npm run init
 |----------|-------------|
 | `FIRECRAWL_API_KEY` | Firecrawl API key for web scraping |
 | `OPENAI_API_KEY` | OpenAI API key for embeddings |
-| `DATABASE_URL` | SQLite path (default: `file:./data/ake.db`) |
+| `DATABASE_URL` | SQLite path (default: `file:../data/ake.db`, relative to `prisma/schema.prisma`) |
 | `LANCEDB_PATH` | LanceDB storage path (default: `./data/lancedb`) |
