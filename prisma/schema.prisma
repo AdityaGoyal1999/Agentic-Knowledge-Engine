@@ -1,0 +1,37 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum DocumentStatus {
+  pending
+  processed
+  failed
+}
+
+model Document {
+  id          String         @id @default(cuid())
+  sourceUrl   String         @unique
+  title       String?
+  markdown    String
+  status      DocumentStatus @default(pending)
+  scrapedAt   DateTime       @default(now())
+  processedAt DateTime?
+  chunks      Chunk[]
+}
+
+model Chunk {
+  id            String    @id @default(cuid())
+  documentId    String
+  document      Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  content       String
+  chunkIndex    Int
+  tokenEstimate Int?
+  embeddedAt    DateTime?
+
+  @@index([documentId])
+}

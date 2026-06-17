@@ -1,0 +1,36 @@
+{
+  "name": "generalizedknowledgeengine",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "init": "tsx src/init.ts",
+    "studio": "prisma studio"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AdityaGoyal1999/Agentic-Knowledge-Engine.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/AdityaGoyal1999/Agentic-Knowledge-Engine/issues"
+  },
+  "homepage": "https://github.com/AdityaGoyal1999/Agentic-Knowledge-Engine#readme",
+  "dependencies": {
+    "@lancedb/lancedb": "^0.30.0",
+    "@mendable/firecrawl-js": "^4.28.0",
+    "@modelcontextprotocol/server": "^2.0.0-alpha.2",
+    "dotenv": "^17.4.2",
+    "openai": "^6.43.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@prisma/client": "^6.19.3",
+    "prisma": "^6.19.3",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}
