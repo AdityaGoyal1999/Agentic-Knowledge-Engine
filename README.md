@@ -9,7 +9,7 @@ AKE is a personal knowledge engine built for founders and researchers who want A
 The pipeline works in three stages:
 
 1. **📥 Ingest** — Firecrawl scrapes web pages (single URLs or full site crawls) and stores clean markdown in a local SQLite database.
-2. **⚙️ Process** — Documents are chunked, embedded with OpenAI, and indexed in LanceDB for semantic search. *(planned)*
+2. **⚙️ Process** — Documents are chunked into searchable segments. Embedding and LanceDB indexing are planned for Phase 4.
 3. **🔍 Query** — An MCP server exposes a search tool so Cursor or Claude can retrieve relevant case-study chunks when you ask questions. *(planned)*
 
 Everything runs locally. Your scraped content, embeddings, and vectors stay on your machine under `data/`. 🔒
@@ -21,13 +21,13 @@ Everything runs locally. Your scraped content, embeddings, and vectors stay on y
 - **🌐 Single-URL scraping** — Ingest one or more case-study URLs into the `Document` table.
 - **🕷️ Site crawling** — Pass a listing-page seed URL and automatically discover and scrape linked pages (`--crawl` mode).
 - **📄 Main-content extraction** — Firecrawl requests markdown with `onlyMainContent: true` to strip nav, footers, and sidebars.
-- **🔄 Document upsert** — Re-scraping the same URL updates markdown and resets status to `pending` for re-processing.
+- **🔄 Document upsert** — New URLs are saved as `pending`. Re-scraping a `pending` document updates markdown for re-processing. **`processed` documents are skipped by default** (use `--force` to re-scrape).
+- **✂️ Markdown-aware chunking** — `process` CLI splits pending documents into ~450-word chunks.
 - **🗄️ Hybrid storage** — Prisma/SQLite for document and chunk metadata; LanceDB for 1536-dim embedding vectors.
 - **👀 Prisma Studio** — Inspect documents and chunks via `npm run studio`.
 
 ### 🚧 Planned
 
-- ✂️ Markdown-aware chunking (`process` CLI)
 - 🧮 OpenAI embedding pipeline (`text-embedding-3-small`)
 - 🔌 MCP stdio server with `search_scraped_data` tool
 - 🤖 Cursor MCP integration for end-to-end querying
@@ -43,8 +43,10 @@ GeneralizedKnowledgeEngine/
 │   ├── lib/
 │   │   ├── db.ts              # Prisma client singleton
 │   │   ├── firecrawl.ts       # Scrape + crawl wrappers
+│   │   ├── chunker.ts         # Markdown-aware text splitting
 │   │   └── lancedb.ts         # LanceDB table init + vector helpers
 │   ├── ingest.ts              # CLI: scrape URLs or crawl a site
+│   ├── process.ts             # CLI: chunk pending documents
 │   └── init.ts                # Bootstrap DB + vector store
 ├── data/                      # gitignored — local SQLite + LanceDB files
 │   ├── ake.db
@@ -60,9 +62,7 @@ Planned additions:
 ```
 src/
 ├── lib/
-│   ├── chunker.ts             # Markdown-aware text splitting
 │   └── embeddings.ts          # OpenAI embed + batch helper
-├── process.ts                 # CLI: chunk + embed pending docs
 └── mcp-server.ts              # MCP tool: search_scraped_data
 ```
 
@@ -78,12 +78,12 @@ flowchart LR
     FC --> DocTable[(Prisma SQLite Documents)]
   end
 
-  subgraph process [Processing — planned]
+  subgraph process [Processing]
     ProcCLI[process CLI]
     Chunker[Markdown chunker]
-    Embed[OpenAI embeddings]
+    Embed[OpenAI embeddings — planned]
     ChunkTable[(Prisma Chunks)]
-    Vectors[(LanceDB vectors)]
+    Vectors[(LanceDB vectors — planned)]
     DocTable --> ProcCLI
     ProcCLI --> Chunker --> ChunkTable
     Chunker --> Embed --> Vectors
@@ -108,7 +108,7 @@ flowchart LR
 | `Chunk` | `documentId`, `content`, `chunkIndex`, `embeddedAt` | Text segments for embedding |
 | `chunk_vectors` (LanceDB) | `chunkId`, `documentId`, `sourceUrl`, `vector` | 1536-dim embeddings for search |
 
-Document status flow: `pending` → `processed` (or `failed`).
+Document status flow: `pending` → `processed` (or `failed`). Once a document is `processed`, ingest skips it by default; `process` only chunks `pending` documents.
 
 ## 📋 Prerequisites
 
@@ -134,24 +134,44 @@ npm run init
 npm run ingest -- https://www.indiehackers.com/post/example https://www.starterstory.com/stories/example
 ```
 
+**Default behavior:** If a URL already exists with `status: processed`, ingest skips it (no Firecrawl call, no DB update). URLs with `status: pending` are re-scraped and updated.
+
+**Force re-scrape:** Pass `--force` to update all URLs regardless of status. Markdown is refreshed and status is reset to `pending` for re-chunking.
+
+```bash
+npm run ingest -- --force https://www.indiehackers.com/post/example
+```
+
 ### 🕷️ Crawl a listing page
 
 Discover and scrape linked case-study pages from a seed URL:
 
 ```bash
 npm run ingest -- --crawl https://www.indiehackers.com/group/tech --limit 20
+npm run ingest -- --crawl https://www.indiehackers.com/group/tech --limit 20 --force
 ```
 
 Crawl options:
 
 | Flag | Description |
 |------|-------------|
+| `--force` | Re-scrape and update documents even if already `processed` |
 | `--limit N` | Max pages to scrape (default: 50, hard-capped during development) |
 | `--include pattern` | Only follow URLs matching this path pattern (repeatable) |
 | `--exclude pattern` | Skip URLs matching this path pattern (repeatable) |
 | `--depth N` | Max link-discovery depth from the seed URL |
 
-Re-scraping the same URL updates the markdown and resets `status` to `pending`.
+During a crawl, already-`processed` pages are skipped at save time unless `--force` is set. Firecrawl may still fetch those pages (using credits); use `--include` / `--exclude` to narrow discovery.
+
+### ✂️ Chunk pending documents
+
+Split `pending` documents into chunks (~450 words each). Documents with `status: processed` are not touched.
+
+```bash
+npm run process
+```
+
+After chunking, documents remain `pending` until Phase 4 adds embedding and marks them `processed`.
 
 ### 👀 Inspect the database
 
@@ -199,7 +219,7 @@ Connects to SQLite and creates the LanceDB vector table if it does not exist.
 
 - [x] 🏗️ Phase 1 — Project scaffold, Prisma schema, LanceDB init, env template
 - [x] 📥 Phase 2 — Firecrawl ingestion CLI (scrape + crawl)
-- [ ] ✂️ Phase 3 — Markdown-aware chunker and `process` CLI
+- [x] ✂️ Phase 3 — Markdown-aware chunker and `process` CLI
 - [ ] 🧮 Phase 4 — OpenAI embedding pipeline and LanceDB vector writes
 - [ ] 🔌 Phase 5 — MCP stdio server with semantic search tool
 - [ ] 🤖 Phase 6 — Cursor MCP config and end-to-end testing

@@ -110,11 +110,26 @@ function parseCrawlArgs(args: string[]): CrawlCliOptions {
   };
 }
 
-async function upsertDocument(page: {
-  sourceUrl: string;
-  title: string | null;
-  markdown: string;
-}): Promise<void> {
+async function isProcessedDocument(sourceUrl: string): Promise<boolean> {
+  const existing = await prisma.document.findUnique({
+    where: { sourceUrl },
+    select: { status: true },
+  });
+  return existing?.status === "processed";
+}
+
+async function upsertDocument(
+  page: {
+    sourceUrl: string;
+    title: string | null;
+    markdown: string;
+  },
+  force: boolean,
+): Promise<"saved" | "skipped"> {
+  if (!force && (await isProcessedDocument(page.sourceUrl))) {
+    return "skipped";
+  }
+
   await prisma.document.upsert({
     where: { sourceUrl: page.sourceUrl },
     create: {
@@ -132,29 +147,53 @@ async function upsertDocument(page: {
       processedAt: null,
     },
   });
+
+  return "saved";
 }
 
-async function ingestScrapeUrls(urls: string[]): Promise<number> {
-  let successCount = 0;
+async function ingestScrapeUrls(
+  urls: string[],
+  force: boolean,
+): Promise<{ saved: number; skipped: number; failed: number }> {
+  let saved = 0;
+  let skipped = 0;
+  let failed = 0;
 
   for (const url of urls) {
+    if (!force && (await isProcessedDocument(url))) {
+      console.error(`Skipped ${url}: already processed (use --force to re-scrape)`);
+      skipped++;
+      continue;
+    }
+
     console.error(`Scraping ${url}...`);
     try {
       const page = await scrapeUrl(url);
-      await upsertDocument(page);
-      console.error(`Saved ${url}`);
-      successCount++;
+      const result = await upsertDocument(page, force);
+      if (result === "skipped") {
+        console.error(`Skipped ${page.sourceUrl}: already processed (use --force to re-scrape)`);
+        skipped++;
+        continue;
+      }
+      console.error(`Saved ${page.sourceUrl}`);
+      saved++;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`Failed ${url}: ${message}`);
+      failed++;
     }
   }
 
-  console.error(`Ingested ${successCount}/${urls.length} URLs (failures: ${urls.length - successCount})`);
-  return successCount;
+  console.error(
+    `Ingested ${saved}/${urls.length} URLs (skipped: ${skipped}, failures: ${failed})`,
+  );
+  return { saved, skipped, failed };
 }
 
-async function ingestCrawl(options: CrawlCliOptions): Promise<number> {
+async function ingestCrawl(
+  options: CrawlCliOptions,
+  force: boolean,
+): Promise<{ saved: number; skippedProcessed: number; saveFailed: number }> {
   console.error(`Crawling ${options.seedUrl} (limit ${options.limit})...`);
 
   let crawlResult;
@@ -168,32 +207,63 @@ async function ingestCrawl(options: CrawlCliOptions): Promise<number> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`Crawl failed for ${options.seedUrl}: ${message}`);
-    return 0;
+    return { saved: 0, skippedProcessed: 0, saveFailed: 0 };
   }
 
-  let savedCount = 0;
+  let saved = 0;
+  let skippedProcessed = 0;
+  let saveFailed = 0;
   for (const page of crawlResult.pages) {
     try {
-      await upsertDocument(page);
-      savedCount++;
+      const result = await upsertDocument(page, force);
+      if (result === "skipped") {
+        skippedProcessed++;
+        continue;
+      }
+      saved++;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`Failed to save ${page.sourceUrl}: ${message}`);
+      saveFailed++;
     }
   }
 
   console.error(
-    `Crawling ${options.seedUrl}... discovered ${crawlResult.discovered} pages, saved ${savedCount} documents (skipped ${crawlResult.skippedEmpty} empty).`,
+    `Crawling ${options.seedUrl}... discovered ${crawlResult.discovered} pages, saved ${saved} documents (skipped ${crawlResult.skippedEmpty} empty, skipped ${skippedProcessed} processed, save failures: ${saveFailed}).`,
   );
 
-  return savedCount;
+  return { saved, skippedProcessed, saveFailed };
+}
+
+function isScrapeIngestSuccessful(result: {
+  saved: number;
+  skipped: number;
+  failed: number;
+}): boolean {
+  return result.failed === 0 && (result.saved > 0 || result.skipped > 0);
+}
+
+function isCrawlIngestSuccessful(result: {
+  saved: number;
+  skippedProcessed: number;
+  saveFailed: number;
+}): boolean {
+  return result.saveFailed === 0 && (result.saved > 0 || result.skippedProcessed > 0);
+}
+
+function stripForceFlag(args: string[]): { args: string[]; force: boolean } {
+  const force = args.includes("--force");
+  return {
+    args: args.filter((arg) => arg !== "--force"),
+    force,
+  };
 }
 
 function printUsage(): void {
   console.error("Usage:");
-  console.error("  npm run ingest -- <url> [url2 ...]");
+  console.error("  npm run ingest -- <url> [url2 ...] [--force]");
   console.error(
-    "  npm run ingest -- --crawl <seed-url> [--limit N] [--include pattern] [--exclude pattern] [--depth N]",
+    "  npm run ingest -- --crawl <seed-url> [--limit N] [--include pattern] [--exclude pattern] [--depth N] [--force]",
   );
 }
 
@@ -203,18 +273,24 @@ if (rawArgs.length === 0) {
   process.exit(1);
 }
 
-const isCrawlMode = rawArgs.includes("--crawl");
+const { args: cliArgs, force } = stripForceFlag(rawArgs);
+if (cliArgs.length === 0) {
+  printUsage();
+  process.exit(1);
+}
+
+const isCrawlMode = cliArgs.includes("--crawl");
 let exitCode = 1;
 
 try {
   if (isCrawlMode) {
-    const crawlOptions = parseCrawlArgs(rawArgs);
-    const savedCount = await ingestCrawl(crawlOptions);
-    exitCode = savedCount > 0 ? 0 : 1;
+    const crawlOptions = parseCrawlArgs(cliArgs);
+    const crawlResult = await ingestCrawl(crawlOptions, force);
+    exitCode = isCrawlIngestSuccessful(crawlResult) ? 0 : 1;
   } else {
-    const urls = parseUrls(rawArgs);
-    const successCount = await ingestScrapeUrls(urls);
-    exitCode = successCount > 0 ? 0 : 1;
+    const urls = parseUrls(cliArgs);
+    const scrapeResult = await ingestScrapeUrls(urls, force);
+    exitCode = isScrapeIngestSuccessful(scrapeResult) ? 0 : 1;
   }
 } catch (err) {
   console.error(err instanceof Error ? err.message : err);
