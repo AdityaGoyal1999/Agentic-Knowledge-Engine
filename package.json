@@ -6,6 +6,7 @@
   "scripts": {
     "init": "tsx src/init.ts",
     "ingest": "tsx src/ingest.ts",
+    "process": "tsx src/process.ts",
     "studio": "prisma studio"
   },
   "repository": {
