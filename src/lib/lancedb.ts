@@ -43,3 +43,39 @@ export async function getVectorTable(): Promise<Table> {
   const db = await getConnection();
   return db.openTable(VECTOR_TABLE);
 }
+
+export interface ChunkVectorRow {
+  chunkId: string;
+  documentId: string;
+  sourceUrl: string;
+  vector: number[];
+}
+
+export async function insertVectors(rows: ChunkVectorRow[]): Promise<void> {
+  if (rows.length === 0) {
+    return;
+  }
+
+  for (const row of rows) {
+    if (row.vector.length !== VECTOR_DIM) {
+      throw new Error(
+        `Vector for chunk ${row.chunkId} has dimension ${row.vector.length}, expected ${VECTOR_DIM}`,
+      );
+    }
+  }
+
+  const table = await getVectorTable();
+  await table.add(rows as unknown as Record<string, unknown>[]);
+}
+
+export async function deleteVectorsByDocumentId(
+  documentId: string,
+): Promise<void> {
+  const table = await getVectorTable();
+  await table.delete(`documentId = '${documentId}'`);
+}
+
+export async function countVectorRows(): Promise<number> {
+  const table = await getVectorTable();
+  return table.countRows("chunkId != '__init__'");
+}

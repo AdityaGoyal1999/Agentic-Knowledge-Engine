@@ -9,7 +9,7 @@ AKE is a personal knowledge engine built for founders and researchers who want A
 The pipeline works in three stages:
 
 1. **📥 Ingest** — Firecrawl scrapes web pages (single URLs or full site crawls) and stores clean markdown in a local SQLite database.
-2. **⚙️ Process** — Documents are chunked into searchable segments. Embedding and LanceDB indexing are planned for Phase 4.
+2. **⚙️ Process** — Documents are chunked into searchable segments, embedded via OpenAI, and stored in LanceDB.
 3. **🔍 Query** — An MCP server exposes a search tool so Cursor or Claude can retrieve relevant case-study chunks when you ask questions. *(planned)*
 
 Everything runs locally. Your scraped content, embeddings, and vectors stay on your machine under `data/`. 🔒
@@ -23,12 +23,12 @@ Everything runs locally. Your scraped content, embeddings, and vectors stay on y
 - **📄 Main-content extraction** — Firecrawl requests markdown with `onlyMainContent: true` to strip nav, footers, and sidebars.
 - **🔄 Document upsert** — New URLs are saved as `pending`. Re-scraping a `pending` document updates markdown for re-processing. **`processed` documents are skipped by default** (use `--force` to re-scrape).
 - **✂️ Markdown-aware chunking** — `process` CLI splits pending documents into ~450-word chunks.
+- **🧮 OpenAI embedding pipeline** — `process` embeds chunks via `text-embedding-3-small` and writes 1536-dim vectors to LanceDB.
 - **🗄️ Hybrid storage** — Prisma/SQLite for document and chunk metadata; LanceDB for 1536-dim embedding vectors.
 - **👀 Prisma Studio** — Inspect documents and chunks via `npm run studio`.
 
 ### 🚧 Planned
 
-- 🧮 OpenAI embedding pipeline (`text-embedding-3-small`)
 - 🔌 MCP stdio server with `search_scraped_data` tool
 - 🤖 Cursor MCP integration for end-to-end querying
 
@@ -44,9 +44,10 @@ GeneralizedKnowledgeEngine/
 │   │   ├── db.ts              # Prisma client singleton
 │   │   ├── firecrawl.ts       # Scrape + crawl wrappers
 │   │   ├── chunker.ts         # Markdown-aware text splitting
+│   │   ├── embeddings.ts      # OpenAI embed + batch helper
 │   │   └── lancedb.ts         # LanceDB table init + vector helpers
 │   ├── ingest.ts              # CLI: scrape URLs or crawl a site
-│   ├── process.ts             # CLI: chunk pending documents
+│   ├── process.ts             # CLI: chunk + embed pending documents
 │   └── init.ts                # Bootstrap DB + vector store
 ├── data/                      # gitignored — local SQLite + LanceDB files
 │   ├── ake.db
@@ -55,15 +56,6 @@ GeneralizedKnowledgeEngine/
 ├── package.json
 ├── tsconfig.json
 └── README.md
-```
-
-Planned additions:
-
-```
-src/
-├── lib/
-│   └── embeddings.ts          # OpenAI embed + batch helper
-└── mcp-server.ts              # MCP tool: search_scraped_data
 ```
 
 ## 🏗️ Architecture
@@ -81,9 +73,9 @@ flowchart LR
   subgraph process [Processing]
     ProcCLI[process CLI]
     Chunker[Markdown chunker]
-    Embed[OpenAI embeddings — planned]
+    Embed[OpenAI embeddings]
     ChunkTable[(Prisma Chunks)]
-    Vectors[(LanceDB vectors — planned)]
+    Vectors[(LanceDB vectors)]
     DocTable --> ProcCLI
     ProcCLI --> Chunker --> ChunkTable
     Chunker --> Embed --> Vectors
@@ -114,7 +106,7 @@ Document status flow: `pending` → `processed` (or `failed`). Once a document i
 
 - **Node.js 22+** (required by `@mendable/firecrawl-js`)
 - **[Firecrawl](https://firecrawl.dev) API key** — free tier is sufficient for development (~1 credit per page)
-- **[OpenAI](https://platform.openai.com) API key** — for `text-embedding-3-small` (needed once processing is implemented)
+- **[OpenAI](https://platform.openai.com) API key** — for `text-embedding-3-small` (required for `process`)
 
 ## 🚀 Setup
 
@@ -163,15 +155,15 @@ Crawl options:
 
 During a crawl, already-`processed` pages are skipped at save time unless `--force` is set. Firecrawl may still fetch those pages (using credits); use `--include` / `--exclude` to narrow discovery.
 
-### ✂️ Chunk pending documents
+### ✂️ Chunk and embed pending documents
 
-Split `pending` documents into chunks (~450 words each). Documents with `status: processed` are not touched.
+Split `pending` documents into chunks (~450 words each), embed them via OpenAI, write vectors to LanceDB, and mark documents `processed`. Documents with `status: processed` are not touched.
 
 ```bash
 npm run process
 ```
 
-After chunking, documents remain `pending` until Phase 4 adds embedding and marks them `processed`.
+If embedding fails for a document (e.g. invalid API key), its status is set to `failed`. Re-scrape with `--force` and run `process` again to retry.
 
 ### 👀 Inspect the database
 
@@ -220,7 +212,7 @@ Connects to SQLite and creates the LanceDB vector table if it does not exist.
 - [x] 🏗️ Phase 1 — Project scaffold, Prisma schema, LanceDB init, env template
 - [x] 📥 Phase 2 — Firecrawl ingestion CLI (scrape + crawl)
 - [x] ✂️ Phase 3 — Markdown-aware chunker and `process` CLI
-- [ ] 🧮 Phase 4 — OpenAI embedding pipeline and LanceDB vector writes
+- [x] 🧮 Phase 4 — OpenAI embedding pipeline and LanceDB vector writes
 - [ ] 🔌 Phase 5 — MCP stdio server with semantic search tool
 - [ ] 🤖 Phase 6 — Cursor MCP config and end-to-end testing
 
