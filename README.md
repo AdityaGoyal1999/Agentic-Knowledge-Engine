@@ -10,7 +10,7 @@ The pipeline works in three stages:
 
 1. **📥 Ingest** — Firecrawl scrapes web pages (single URLs or full site crawls) and stores clean markdown in a local SQLite database.
 2. **⚙️ Process** — Documents are chunked into searchable segments, embedded via OpenAI, and stored in LanceDB.
-3. **🔍 Query** — An MCP server exposes a search tool so Cursor or Claude can retrieve relevant case-study chunks when you ask questions. *(planned)*
+3. **🔍 Query** — An MCP server exposes `search_scraped_data` so Cursor or Claude can retrieve relevant case-study chunks when you ask questions.
 
 Everything runs locally. Your scraped content, embeddings, and vectors stay on your machine under `data/`. 🔒
 
@@ -27,11 +27,11 @@ Everything runs locally. Your scraped content, embeddings, and vectors stay on y
 - **🗄️ Hybrid storage** — Prisma/SQLite for document and chunk metadata; LanceDB for 1536-dim embedding vectors.
 - **👀 Prisma Studio** — Inspect documents and chunks via `npm run studio`.
 - **🔎 LanceDB inspection** — `npm run inspect:lancedb` prints vector counts and sample rows from the `chunk_vectors` table.
+- **🔌 MCP search server** — `npm run mcp` exposes `search_scraped_data` (alias: `query_knowledge_base`) for semantic search over ingested chunks.
 
 ### 🚧 Planned
 
-- 🔌 MCP stdio server with `search_scraped_data` tool
-- 🤖 Cursor MCP integration for end-to-end querying
+- 🤖 Cursor MCP integration for end-to-end querying (Phase 6)
 
 ## 📁 Project structure
 
@@ -46,9 +46,11 @@ GeneralizedKnowledgeEngine/
 │   │   ├── firecrawl.ts       # Scrape + crawl wrappers
 │   │   ├── chunker.ts         # Markdown-aware text splitting
 │   │   ├── embeddings.ts      # OpenAI embed + batch helper
-│   │   └── lancedb.ts         # LanceDB table init + vector helpers
+│   │   ├── lancedb.ts         # LanceDB table init + vector helpers
+│   │   └── search.ts          # Semantic search orchestration
 │   ├── ingest.ts              # CLI: scrape URLs or crawl a site
 │   ├── process.ts             # CLI: chunk + embed pending documents
+│   ├── mcp-server.ts          # MCP stdio server (search_scraped_data)
 │   ├── inspect-lancedb.ts     # CLI: inspect LanceDB vector table
 │   └── init.ts                # Bootstrap DB + vector store
 ├── data/                      # gitignored — local SQLite + LanceDB files
@@ -83,7 +85,7 @@ flowchart LR
     Chunker --> Embed --> Vectors
   end
 
-  subgraph query [MCP Query — planned]
+  subgraph query [MCP Query]
     MCP[MCP stdio server]
     QueryEmbed[Query embedding]
     MCP --> QueryEmbed --> Vectors
@@ -108,7 +110,7 @@ Document status flow: `pending` → `processed` (or `failed`). Once a document i
 
 - **Node.js 22+** (required by `@mendable/firecrawl-js`)
 - **[Firecrawl](https://firecrawl.dev) API key** — free tier is sufficient for development (~1 credit per page)
-- **[OpenAI](https://platform.openai.com) API key** — for `text-embedding-3-small` (required for `process`)
+- **[OpenAI](https://platform.openai.com) API key** — for `text-embedding-3-small` (required for `process` and `mcp`)
 
 ## 🚀 Setup
 
@@ -187,6 +189,31 @@ npm run inspect:lancedb
 
 Prints the total vector count (excluding the bootstrap `__init__` row), sample `chunkId` / `documentId` / `sourceUrl` rows, and a dimension check on one embedding vector.
 
+### 🔍 Run the MCP search server
+
+Start the stdio MCP server (used by Cursor/Claude MCP configs in Phase 6):
+
+```bash
+npm run mcp
+```
+
+**Tool:** `search_scraped_data` (alias: `query_knowledge_base`)
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `query` | string | required | Natural-language search query |
+| `limit` | number | 5 | Max results (1–10) |
+
+The tool embeds the query, searches LanceDB for similar chunks, joins Prisma for full text, and returns formatted results with `sourceUrl`, `chunkId`, and similarity scores.
+
+Test interactively with MCP Inspector:
+
+```bash
+npx @modelcontextprotocol/inspector npx tsx src/mcp-server.ts
+```
+
+Required env vars for MCP: `OPENAI_API_KEY`, `DATABASE_URL`, `LANCEDB_PATH`.
+
 ### 🏁 Initialize storage
 
 ```bash
@@ -204,6 +231,7 @@ Connects to SQLite and creates the LanceDB vector table if it does not exist.
 | `process` | `npm run process` | Chunk and embed pending documents |
 | `studio` | `npm run studio` | Open Prisma Studio |
 | `inspect:lancedb` | `npm run inspect:lancedb` | Print LanceDB vector stats and samples |
+| `mcp` | `npm run mcp` | Start MCP stdio server with `search_scraped_data` |
 
 ## 🔑 Environment variables
 
@@ -233,7 +261,7 @@ Connects to SQLite and creates the LanceDB vector table if it does not exist.
 - [x] 📥 Phase 2 — Firecrawl ingestion CLI (scrape + crawl)
 - [x] ✂️ Phase 3 — Markdown-aware chunker and `process` CLI
 - [x] 🧮 Phase 4 — OpenAI embedding pipeline and LanceDB vector writes
-- [ ] 🔌 Phase 5 — MCP stdio server with semantic search tool
+- [x] 🔌 Phase 5 — MCP stdio server with semantic search tool
 - [ ] 🤖 Phase 6 — Cursor MCP config and end-to-end testing
 
 ## 📄 License

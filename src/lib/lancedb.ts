@@ -79,3 +79,38 @@ export async function countVectorRows(): Promise<number> {
   const table = await getVectorTable();
   return table.countRows("chunkId != '__init__'");
 }
+
+export interface VectorSearchHit {
+  chunkId: string;
+  documentId: string;
+  sourceUrl: string;
+  distance: number;
+}
+
+export async function searchVectors(
+  queryVector: number[],
+  limit: number,
+): Promise<VectorSearchHit[]> {
+  if (queryVector.length !== VECTOR_DIM) {
+    throw new Error(
+      `Query vector has dimension ${queryVector.length}, expected ${VECTOR_DIM}`,
+    );
+  }
+
+  const table = await getVectorTable();
+  const rows = await table
+    .query()
+    .nearestTo(queryVector)
+    .distanceType("cosine")
+    .where("chunkId != '__init__'")
+    .limit(limit)
+    .select(["chunkId", "documentId", "sourceUrl", "_distance"])
+    .toArray();
+
+  return rows.map((row) => ({
+    chunkId: row.chunkId as string,
+    documentId: row.documentId as string,
+    sourceUrl: row.sourceUrl as string,
+    distance: row._distance as number,
+  }));
+}
