@@ -22,10 +22,11 @@ Everything runs locally. Your scraped content, embeddings, and vectors stay on y
 - **🕷️ Site crawling** — Pass a listing-page seed URL and automatically discover and scrape linked pages (`--crawl` mode).
 - **📄 Main-content extraction** — Firecrawl requests markdown with `onlyMainContent: true` to strip nav, footers, and sidebars.
 - **🔄 Document upsert** — New URLs are saved as `pending`. Re-scraping a `pending` document updates markdown for re-processing. **`processed` documents are skipped by default** (use `--force` to re-scrape).
-- **✂️ Markdown-aware chunking** — `process` CLI splits pending documents into ~450-word chunks.
-- **🧮 OpenAI embedding pipeline** — `process` embeds chunks via `text-embedding-3-small` and writes 1536-dim vectors to LanceDB.
+- **✂️ Markdown-aware chunking** — `process` CLI splits pending documents into ~450-word chunks (max ~550), respecting headings, paragraphs, and fenced code blocks.
+- **🧮 OpenAI embedding pipeline** — `process` embeds chunks via `text-embedding-3-small` in batches of 100, with automatic rate-limit retries, and writes 1536-dim vectors to LanceDB.
 - **🗄️ Hybrid storage** — Prisma/SQLite for document and chunk metadata; LanceDB for 1536-dim embedding vectors.
 - **👀 Prisma Studio** — Inspect documents and chunks via `npm run studio`.
+- **🔎 LanceDB inspection** — `npm run inspect:lancedb` prints vector counts and sample rows from the `chunk_vectors` table.
 
 ### 🚧 Planned
 
@@ -48,6 +49,7 @@ GeneralizedKnowledgeEngine/
 │   │   └── lancedb.ts         # LanceDB table init + vector helpers
 │   ├── ingest.ts              # CLI: scrape URLs or crawl a site
 │   ├── process.ts             # CLI: chunk + embed pending documents
+│   ├── inspect-lancedb.ts     # CLI: inspect LanceDB vector table
 │   └── init.ts                # Bootstrap DB + vector store
 ├── data/                      # gitignored — local SQLite + LanceDB files
 │   ├── ake.db
@@ -96,8 +98,8 @@ flowchart LR
 
 | Model | Key fields | Purpose |
 |-------|-----------|---------|
-| `Document` | `sourceUrl`, `title`, `markdown`, `status` | Scraped page content |
-| `Chunk` | `documentId`, `content`, `chunkIndex`, `embeddedAt` | Text segments for embedding |
+| `Document` | `sourceUrl`, `title`, `markdown`, `status`, `scrapedAt`, `processedAt` | Scraped page content |
+| `Chunk` | `documentId`, `content`, `chunkIndex`, `tokenEstimate`, `embeddedAt` | Text segments for embedding |
 | `chunk_vectors` (LanceDB) | `chunkId`, `documentId`, `sourceUrl`, `vector` | 1536-dim embeddings for search |
 
 Document status flow: `pending` → `processed` (or `failed`). Once a document is `processed`, ingest skips it by default; `process` only chunks `pending` documents.
@@ -157,13 +159,13 @@ During a crawl, already-`processed` pages are skipped at save time unless `--for
 
 ### ✂️ Chunk and embed pending documents
 
-Split `pending` documents into chunks (~450 words each), embed them via OpenAI, write vectors to LanceDB, and mark documents `processed`. Documents with `status: processed` are not touched.
+Split `pending` documents into chunks (~450 words each, max ~550), embed them via OpenAI in batches of 100, write vectors to LanceDB, and mark documents `processed`. Documents with `status: processed` are not touched.
 
 ```bash
 npm run process
 ```
 
-If embedding fails for a document (e.g. invalid API key), its status is set to `failed`. Re-scrape with `--force` and run `process` again to retry.
+When re-processing a `pending` document, existing chunks and LanceDB vectors for that document are deleted first. If embedding fails for a document (e.g. invalid API key), its status is set to `failed`. Re-scrape with `--force` and run `process` again to retry.
 
 ### 👀 Inspect the database
 
@@ -177,6 +179,14 @@ Opens Prisma Studio in the browser. For long markdown fields, export via SQLite 
 sqlite3 data/ake.db "SELECT markdown FROM Document LIMIT 1;" > preview.md
 ```
 
+### 🔎 Inspect LanceDB vectors
+
+```bash
+npm run inspect:lancedb
+```
+
+Prints the total vector count (excluding the bootstrap `__init__` row), sample `chunkId` / `documentId` / `sourceUrl` rows, and a dimension check on one embedding vector.
+
 ### 🏁 Initialize storage
 
 ```bash
@@ -184,6 +194,16 @@ npm run init
 ```
 
 Connects to SQLite and creates the LanceDB vector table if it does not exist.
+
+## 📜 NPM scripts
+
+| Script | Command | Description |
+|--------|---------|-------------|
+| `init` | `npm run init` | Bootstrap SQLite + LanceDB |
+| `ingest` | `npm run ingest -- <args>` | Scrape URLs or crawl a listing page |
+| `process` | `npm run process` | Chunk and embed pending documents |
+| `studio` | `npm run studio` | Open Prisma Studio |
+| `inspect:lancedb` | `npm run inspect:lancedb` | Print LanceDB vector stats and samples |
 
 ## 🔑 Environment variables
 
