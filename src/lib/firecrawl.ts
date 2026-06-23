@@ -6,9 +6,6 @@ export interface ScrapeResult {
   sourceUrl: string;
 }
 
-/** Hard cap during development — remove before production (see build plan). */
-export const CRAWL_DEV_MAX_LIMIT = 50;
-
 export interface CrawlSiteOptions {
   limit?: number;
   includePaths?: string[];

@@ -154,7 +154,7 @@ Crawl options:
 | Flag                | Description                                                       |
 | ------------------- | ----------------------------------------------------------------- |
 | `--force`           | Re-scrape and update documents even if already `processed`        |
-| `--limit N`         | Max pages to scrape (default: 50, hard-capped during development) |
+| `--limit N`         | Max pages to scrape (omit to crawl all discovered pages)            |
 | `--include pattern` | Only follow URLs matching this path pattern (repeatable)          |
 | `--exclude pattern` | Skip URLs matching this path pattern (repeatable)                 |
 | `--depth N`         | Max link-discovery depth from the seed URL                        |
@@ -267,7 +267,7 @@ npx @modelcontextprotocol/inspector npm run mcp
 | `OPENAI_API_KEY`      | OpenAI API key for embeddings                    | —                     |
 | `DATABASE_URL`        | SQLite path (relative to `prisma/schema.prisma`) | `file:../data/ake.db` |
 | `LANCEDB_PATH`        | LanceDB storage directory                        | `./data/lancedb`      |
-| `CRAWL_DEFAULT_LIMIT` | Default page limit when `--limit` is omitted     | `50`                  |
+| `CRAWL_DEFAULT_LIMIT` | Default page limit when `--limit` is omitted (unset = no limit) | — |
 
 
 ## 🛠️ Tech stack

@@ -1,10 +1,10 @@
 import "dotenv/config";
-import { crawlSite, CRAWL_DEV_MAX_LIMIT, scrapeUrl } from "./lib/firecrawl.js";
+import { crawlSite, scrapeUrl } from "./lib/firecrawl.js";
 import { prisma } from "./lib/db.js";
 
 interface CrawlCliOptions {
   seedUrl: string;
-  limit: number;
+  limit?: number;
   includePaths?: string[];
   excludePaths?: string[];
   maxDiscoveryDepth?: number;
@@ -18,19 +18,22 @@ function parsePositiveInt(value: string, flag: string): number {
   return parsed;
 }
 
-function resolveCrawlLimit(requested?: number): number {
-  const envDefault = Number.parseInt(process.env.CRAWL_DEFAULT_LIMIT ?? "50", 10);
-  const defaultLimit = Number.isFinite(envDefault) && envDefault > 0 ? envDefault : 50;
-  const limit = requested ?? defaultLimit;
-
-  if (limit > CRAWL_DEV_MAX_LIMIT) {
-    console.error(
-      `Crawl limit capped at ${CRAWL_DEV_MAX_LIMIT} during development (requested ${limit}).`,
-    );
-    return CRAWL_DEV_MAX_LIMIT;
+function resolveCrawlLimit(requested?: number): number | undefined {
+  if (requested !== undefined) {
+    return requested;
   }
 
-  return limit;
+  const envDefault = process.env.CRAWL_DEFAULT_LIMIT?.trim();
+  if (!envDefault) {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(envDefault, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    throw new Error(`Invalid CRAWL_DEFAULT_LIMIT: ${envDefault}`);
+  }
+
+  return parsed;
 }
 
 function parseUrls(args: string[]): string[] {
@@ -194,7 +197,9 @@ async function ingestCrawl(
   options: CrawlCliOptions,
   force: boolean,
 ): Promise<{ saved: number; skippedProcessed: number; saveFailed: number }> {
-  console.error(`Crawling ${options.seedUrl} (limit ${options.limit})...`);
+  const limitLabel =
+    options.limit === undefined ? "no limit" : `limit ${options.limit}`;
+  console.error(`Crawling ${options.seedUrl} (${limitLabel})...`);
 
   let crawlResult;
   try {
