@@ -19,7 +19,7 @@ Everything runs locally. Your scraped content, embeddings, and vectors stay on y
 ### ✅ Implemented
 
 - **🌐 Single-URL scraping** — Ingest one or more case-study URLs into the `Document` table.
-- **🕷️ Site crawling** — Pass a listing-page seed URL and automatically discover and scrape linked pages (`--crawl` mode).
+- **🕷️ Site crawling** — Pass a listing-page seed URL and automatically discover and scrape linked pages (`--crawl` mode). Default cap: 50 pages; use `--all` for unlimited discovery.
 - **📄 Main-content extraction** — Firecrawl requests markdown with `onlyMainContent: true` to strip nav, footers, and sidebars.
 - **🔄 Document upsert** — New URLs are saved as `pending`. Re-scraping a `pending` document updates markdown for re-processing. `**processed` documents are skipped by default** (use `--force` to re-scrape).
 - **✂️ Markdown-aware chunking** — `process` CLI splits pending documents into ~450-word chunks (max ~550), respecting headings, paragraphs, and fenced code blocks.
@@ -141,10 +141,11 @@ npm run ingest -- --force https://www.indiehackers.com/post/example
 
 ### 🕷️ Crawl a listing page
 
-Discover and scrape linked case-study pages from a seed URL:
+Discover and scrape linked case-study pages from a seed URL. By default, crawls up to **50 pages** (~1 Firecrawl credit each). Use `--all` to scrape every page Firecrawl discovers (no page cap).
 
 ```bash
 npm run ingest -- --crawl https://www.indiehackers.com/group/tech --limit 20
+npm run ingest -- --crawl https://www.indiehackers.com/group/tech --all --include "/post/*"
 npm run ingest -- --crawl https://www.indiehackers.com/group/tech --limit 20 --force
 ```
 
@@ -153,8 +154,9 @@ Crawl options:
 
 | Flag                | Description                                                       |
 | ------------------- | ----------------------------------------------------------------- |
+| `--all`             | Crawl all discovered pages (no page limit; uses more credits)     |
 | `--force`           | Re-scrape and update documents even if already `processed`        |
-| `--limit N`         | Max pages to scrape (omit to crawl all discovered pages)            |
+| `--limit N`         | Max pages to scrape (default: **50** when `--all` is not set)     |
 | `--include pattern` | Only follow URLs matching this path pattern (repeatable)          |
 | `--exclude pattern` | Skip URLs matching this path pattern (repeatable)                 |
 | `--depth N`         | Max link-discovery depth from the seed URL                        |
@@ -267,7 +269,7 @@ npx @modelcontextprotocol/inspector npm run mcp
 | `OPENAI_API_KEY`      | OpenAI API key for embeddings                    | —                     |
 | `DATABASE_URL`        | SQLite path (relative to `prisma/schema.prisma`) | `file:../data/ake.db` |
 | `LANCEDB_PATH`        | LanceDB storage directory                        | `./data/lancedb`      |
-| `CRAWL_DEFAULT_LIMIT` | Default page limit when `--limit` is omitted (unset = no limit) | — |
+| `CRAWL_DEFAULT_LIMIT` | Override default crawl page cap when `--limit` and `--all` are omitted | `50` |
 
 
 ## 🛠️ Tech stack

@@ -18,22 +18,33 @@ function parsePositiveInt(value: string, flag: string): number {
   return parsed;
 }
 
-function resolveCrawlLimit(requested?: number): number | undefined {
+const DEFAULT_CRAWL_LIMIT = 50;
+
+function resolveCrawlLimit(
+  requested: number | undefined,
+  crawlAll: boolean,
+): number | undefined {
+  if (crawlAll) {
+    if (requested !== undefined) {
+      throw new Error("Cannot use --all with --limit");
+    }
+    return undefined;
+  }
+
   if (requested !== undefined) {
     return requested;
   }
 
   const envDefault = process.env.CRAWL_DEFAULT_LIMIT?.trim();
-  if (!envDefault) {
-    return undefined;
+  if (envDefault) {
+    const parsed = Number.parseInt(envDefault, 10);
+    if (!Number.isFinite(parsed) || parsed < 1) {
+      throw new Error(`Invalid CRAWL_DEFAULT_LIMIT: ${envDefault}`);
+    }
+    return parsed;
   }
 
-  const parsed = Number.parseInt(envDefault, 10);
-  if (!Number.isFinite(parsed) || parsed < 1) {
-    throw new Error(`Invalid CRAWL_DEFAULT_LIMIT: ${envDefault}`);
-  }
-
-  return parsed;
+  return DEFAULT_CRAWL_LIMIT;
 }
 
 function parseUrls(args: string[]): string[] {
@@ -62,6 +73,7 @@ function parseCrawlArgs(args: string[]): CrawlCliOptions {
   }
 
   let limit: number | undefined;
+  let crawlAll = false;
   let includePaths: string[] | undefined;
   let excludePaths: string[] | undefined;
   let maxDiscoveryDepth: number | undefined;
@@ -72,6 +84,10 @@ function parseCrawlArgs(args: string[]): CrawlCliOptions {
     }
 
     const arg = args[i];
+    if (arg === "--all") {
+      crawlAll = true;
+      continue;
+    }
     if (arg === "--limit") {
       if (i + 1 >= args.length) {
         throw new Error("Missing value for --limit");
@@ -106,7 +122,7 @@ function parseCrawlArgs(args: string[]): CrawlCliOptions {
 
   return {
     seedUrl,
-    limit: resolveCrawlLimit(limit),
+    limit: resolveCrawlLimit(limit, crawlAll),
     includePaths,
     excludePaths,
     maxDiscoveryDepth,
@@ -268,7 +284,7 @@ function printUsage(): void {
   console.error("Usage:");
   console.error("  npm run ingest -- <url> [url2 ...] [--force]");
   console.error(
-    "  npm run ingest -- --crawl <seed-url> [--limit N] [--include pattern] [--exclude pattern] [--depth N] [--force]",
+    "  npm run ingest -- --crawl <seed-url> [--all] [--limit N] [--include pattern] [--exclude pattern] [--depth N] [--force]",
   );
 }
 
