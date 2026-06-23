@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "ake": {
+      "command": "npm",
+      "args": ["run", "mcp"],
+      "cwd": "/absolute/path/to/GeneralizedKnowledgeEngine",
+      "env": {
+        "OPENAI_API_KEY": "sk-your-openai-key-here",
+        "DATABASE_URL": "file:../data/ake.db",
+        "LANCEDB_PATH": "./data/lancedb"
+      }
+    }
+  }
+}
